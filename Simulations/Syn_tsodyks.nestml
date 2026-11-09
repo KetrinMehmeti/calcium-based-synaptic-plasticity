@@ -1,0 +1,113 @@
+"""
+stdp - Synapse model for spike-timing dependent plasticity
+#########################################################
+
+Description
++++++++++++
+
+stdp_synapse is a synapse with spike-timing dependent plasticity (as defined in [1]_). Here the weight dependence exponent can be set separately for potentiation and depression. Examples:
+
+=================== ==== =============================
+Multiplicative STDP [2]_ mu_plus = mu_minus = 1
+Additive STDP       [3]_ mu_plus = mu_minus = 0
+Guetig STDP         [1]_ mu_plus, mu_minus in [0, 1]
+Van Rossum STDP     [4]_ mu_plus = 0 mu_minus = 1
+=================== ==== =============================
+
+
+References
+++++++++++
+
+.. [1] Guetig et al. (2003) Learning Input Correlations through Nonlinear
+       Temporally Asymmetric Hebbian Plasticity. Journal of Neuroscience
+
+.. [2] Rubin, J., Lee, D. and Sompolinsky, H. (2001). Equilibrium
+       properties of temporally asymmetric Hebbian plasticity, PRL
+       86,364-367
+
+.. [3] Song, S., Miller, K. D. and Abbott, L. F. (2000). Competitive
+       Hebbian learning through spike-timing-dependent synaptic
+       plasticity,Nature Neuroscience 3:9,919--926
+
+.. [4] van Rossum, M. C. W., Bi, G-Q and Turrigiano, G. G. (2000).
+       Stable Hebbian learning from spike timing-dependent
+       plasticity, Journal of Neuroscience, 20:23,8812--8821
+"""
+
+synapse tsodyks_calcium:
+    state:
+
+        recordable x real = 1.0  # Frazione di risorse (vescicole) disponibili
+        recordable u real = 0.0  # Probabilita di rilascio istantanea (correlata al calcio presinaptico)
+        
+        t_last ms = 0.0 ms
+
+    parameters:
+        d ms = 1.0 ms  @nest::delay
+        
+        tau_rec ms = 800 ms # 50.0 ms - 800   # Tempo recupero vescicole (ms)
+        tau_fac ms = 100.0 ms   # Tempo decadimento facilitazione (ms)
+
+        # w_min real = 40 # 10.0
+        w_max real = 220 # 100.0
+        w_base real = 119  # questo e per le prove NO: 160-140-120 (tutto pot, se piu alto fa di piu) --- 100-110-115 (salgono in maniera differente se pot e dep pero va in depre) - 117.5-116scende pot circa
+        # 118 circa va 
+        
+        
+        U_min real = 0.1
+        U_max real = 0.5
+
+    input:
+        pre_spikes <- spike
+        p real <- continuous  # La variabile rho (efficacia) dal neurone post
+
+    output:
+        spike
+
+    onReceive(pre_spikes):
+  
+        t_now ms = t
+        dt ms = t_now - t_last
+        t_last = t_now
+
+
+
+        # w_base real = w_min + (p * (w_max - w_min))
+        
+        U_base real = U_min + (p * (U_max - U_min))
+        
+        x_recovered real = 1.0 - (1.0 - x) * exp(-dt / tau_rec)  
+        
+        u_relaxed real = U_base + (u - U_base) * exp(-dt / tau_fac)
+
+        weight_effective real = w_base * x_recovered * u_relaxed 
+
+        x = x_recovered - (u_relaxed * x_recovered) 
+        
+        u = u_relaxed + U_base * (1.0 - u_relaxed)
+
+        deliver_spike(weight_effective, d)
+
+
+        # dt ms = t - t_last
+        # t_last = t
+
+
+        # x = 1.0 + (x - 1.0) * exp(-dt / tau_rec)
+
+
+        # w_eff real = w_max * x * U_max
+        
+
+        # x = x - (x * U_max)
+
+
+        # deliver_spike(w_eff, d)
+
+
+
+
+
+
+
+

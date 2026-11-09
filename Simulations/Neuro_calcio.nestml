@@ -1,0 +1,213 @@
+neuron mhill_tononi_neuron: 
+    state:
+        r integer = 0           # Counts number of tick during the refractory period
+        g_spike boolean = false 
+        loga real = 10.26
+        cstel real = 0
+        AMPA_g_peak nS = 0.8 nS   
+        g_bool boolean = false
+        V_m mV = ( g_NaL * E_Na + g_KL * E_K ) / ( g_NaL + g_KL )   # Baseline value for Vm 
+        Theta mV = Theta_eq 
+        
+        m real = 0
+        h real = 0
+        recordable Ca_in mmol/dm**3 = Ca_in_0 
+        recordable c_star ms*mmol/dm**3 = 0 ms*mmol/dm**3
+        recordable p real = 0
+        
+        # Synaptic conductances
+        g_AMPA real = 0
+        g_NMDA real = 0
+        g_AMPA$ real = AMPAInitialValue
+        g_NMDA$ real = NMDAInitialValue
+
+    equations:
+        #############
+        # V_m
+        #############
+        
+        # Artifical excitation
+        inline I_syn_exc pA = convolve(g_exc, I_EXC) * nS * ( V_m - E_Na )
+
+        # AMPA and NMDA currents
+        inline G_ampa_bar nS = gmax_d_AMPA + p *(gmax_p_AMPA - gmax_d_AMPA)
+        AMPA_g_peak' = (G_ampa_bar -  AMPA_g_peak) / ((1e3)*tau_change)
+        
+       
+        inline I_syn_ampa pA = AMPA_g_peak * convolve(g_AMPA, AMPA) * ( V_m - AMPA_E_rev ) 
+     
+         
+        
+        inline G_nmda nS = convolve(g_NMDA, NMDA) * nS
+        inline G_hat_vdcc nS = 4 * pi * g_bar * (3 / (4*pi) * X)**(2 / 3)
+        
+        inline m_inf real = 1 / (1 + exp((V_hm - V_m) / k_m))
+        inline h_inf real = 1 /(1 + exp((V_hh - V_m) / k_h))
+        m' = (m_inf - m)/t_m
+        h' = (h_inf - h)/t_h
+        
+        inline G_vdcc nS = G_hat_vdcc * m**2 * h
+        inline I_vdcc pA = G_vdcc * (V_m - E_vdcc)
+        
+        inline P_f real = (4 * Ca_out) / (4 * Ca_out + ((1/1.38) * 120 * 0.6)) 
+        inline G_tilde_nmdar nS = alpha * P_f * G_nmda
+        inline I_tilde_nmdar pA = G_tilde_nmdar * (V_m - E_tilde_nmdar)
+        
+        Ca_in' = - (I_tilde_nmdar + I_vdcc) * (eta/(2 * F * X)) - ((Ca_in - Ca_in_0)/tau_ca)
+        
+        c_star'   = - c_star/tau_star + (Ca_in - Ca_in_0)
+        p' = (- p * (1 - p)*(0.5 - p) + gamma_p * (1 - p) * Hfun(c_star, theta_p) - gamma_d * p * Hfun(c_star, theta_d))/(tau)
+
+     
+         
+     
+     
+     
+     
+        recordable inline I_syn_nmda pA = G_nmda * ( V_m - Eca_syn_nmda ) / ( 1 + exp( ( NMDA_Vact - V_m ) / NMDA_Sact ) ) 
+        inline I_syn pA = I_syn_ampa + I_syn_nmda + I_vdcc
+     
+     
+        # Sodium and potassium currents
+        inline I_Na pA = g_NaL * ( V_m - E_Na )
+        inline I_K pA = g_KL * ( V_m - E_K )
+        
+        # Potassium repolarizing current
+        recordable inline I_spike mV = (g_spike) ? -( V_m - E_K ) / Tau_spike * ms : 0 mV
+
+        Theta' = -( Theta - Theta_eq ) / Tau_theta      #---Dynamic AP Threshold
+        
+
+        # Membrane potential dynamics
+        V_m'  = ( ( - I_Na - I_K - I_syn - I_syn_exc + I_stim ) / Tau_m + I_spike * pA/(ms * mV) ) * s/nF  #I_KNa I_NaP
+        
+        
+        #############
+        # Synapses
+        #############
+        kernel g_AMPA' = g_AMPA$ - g_AMPA  / AMPA_Tau_2,
+               g_AMPA$' = -g_AMPA$ / AMPA_Tau_1
+
+        kernel g_NMDA' = g_NMDA$ - g_NMDA / NMDA_Tau_2,
+               g_NMDA$' = -g_NMDA$ / NMDA_Tau_1
+               
+        kernel g_exc = (e/tau_syn_exc) * t * exp(-t/tau_syn_exc)
+               
+
+    parameters:
+        E_vdcc mV = 120 mV 
+        g_bar nS/(um**2) = 0.0744 nS/(um**2)
+        X um**3 = 0.087 um**3
+        t_m ms = 1 ms                   # m time constant
+        V_hm mV = -5.9 mV
+        k_m mV = 9.5 mV
+        t_h ms = 27 ms
+        V_hh mV = -39 mV
+        k_h mV = -9.2 mV
+        pi real = 3.14                  
+        tau_ca ms = 12 ms
+        Ca_in_0 mmol/dm**3 = 70e-6 mmol/dm**3
+        F C/mol = 96485.33212 C/mol 
+        eta real = 0.04
+        E_tilde_nmdar mV = 40 mV
+        Ca_out mmol/dm**3 = 2 mmol/dm**3
+        alpha real = 0.6
+        tau s = 70 s
+        gamma_p real = 450  # 450
+        gamma_d real = 100  # 100
+        tau_star ms = 200 ms
+        theta_d ms*mmol/dm**3 = 220 ms*mmol/dm**3  
+        theta_p ms*mmol/dm**3 = 300 ms*mmol/dm**3
+        gmax_d_AMPA nS = 1 nS
+        gmax_p_AMPA nS = 2 nS
+        tau_change s = 100 s
+                    
+        
+        
+        
+        Eca_syn_nmda mV = 40 mV
+        E_exc mV = 0 mV                 # Excitatory reversal potential
+        E_Rest mV = -65 mV
+        E_Na mV = 30.0 mV #30
+        E_K mV = -90.0 mV
+        g_NaL nS =  0.2 nS
+        g_KL nS = 1.0 nS                # 1.0 - 1.85
+        Tau_m ms = 16.0 ms              # membrane time constant applying to all currents but repolarizing K-current (see [1, p 1677]) 16ms
+        Theta_eq mV = -40.0 mV          # equilibrium value
+        Tau_spike ms = 1.75 ms          # membrane time constant applying to repolarizing K-current 1.75
+        t_ref ms = 20 ms
+        Tau_theta ms = 30.0 ms  # time constant
+        tau_syn_exc ms = 0.2 ms         # Synaptic time constant of excitatory synapse
+        tau_ch ms = 8000 ms
+
+        # AMPA parameters
+        AMPA_E_rev mV = 0.0 mV          # reversal potential
+        AMPA_Tau_1 ms = 0.5 ms          # rise time 0.5
+        AMPA_Tau_2 ms = 2.4 ms          # decay time, Tau_1 < Tau_2 2.4
+
+        # NMDA parameters
+        NMDA_g_peak nS = 0.075 nS       # peak conductance
+        NMDA_Tau_1 ms = 4.0 ms          # rise time 4
+        NMDA_Tau_2 ms = 40.0 ms         # decay time, Tau_1 < Tau_2 40
+        NMDA_E_rev mV = 0.0 mV          # reversal potential
+        NMDA_Vact mV = -58.0 mV         # inactive for V << Vact, inflection of sigmoid
+        NMDA_Sact mV = 2.5 mV           # scale of inactivation
+        
+        # Constant external input current
+        I_e pA = 0 pA
+
+
+    internals:
+       # Inline calculations for each synapse
+        RefractoryCounts integer = steps(t_ref) # refractory time in steps 
+        
+        # AMPA initialization
+        inline exact_integration_adjustment_AMPA real = ( ( 1 / AMPA_Tau_2 ) - ( 1 / AMPA_Tau_1 ) ) * ms
+        inline t_peak_AMPA ms = ( AMPA_Tau_2 * AMPA_Tau_1 ) * ln( AMPA_Tau_2 / AMPA_Tau_1 ) / ( AMPA_Tau_2 - AMPA_Tau_1 )
+        inline normalisation_factor_AMPA real = 1 / ( exp( -t_peak_AMPA / AMPA_Tau_1 ) - exp( -t_peak_AMPA / AMPA_Tau_2 ) )
+        #inline AMPAInitialValue real = AMPA_g_peak * normalisation_factor_AMPA * exact_integration_adjustment_AMPA
+        inline AMPAInitialValue real = normalisation_factor_AMPA * exact_integration_adjustment_AMPA
+       
+        # NMDA initialization
+        inline exact_integration_adjustment_NMDA real = ( ( 1 / NMDA_Tau_2 ) - ( 1 / NMDA_Tau_1 ) ) * ms
+        inline t_peak_NMDA ms = ( NMDA_Tau_2 * NMDA_Tau_1 ) * ln( NMDA_Tau_2 / NMDA_Tau_1 ) / ( NMDA_Tau_2 - NMDA_Tau_1 )
+        inline normalisation_factor_NMDA real = 1 / ( exp( -t_peak_NMDA / NMDA_Tau_1 ) - exp( -t_peak_NMDA / NMDA_Tau_2 ) )
+        inline NMDAInitialValue real = NMDA_g_peak * normalisation_factor_NMDA * exact_integration_adjustment_NMDA
+        
+
+    input:
+        AMPA <- spike
+        NMDA <- spike
+        I_EXC <- spike
+        I_stim pA <- continuous
+
+
+    output:
+        spike 
+
+
+    update:
+       integrate_odes()
+       if r > 0:
+           r =  r - 1
+       else: 
+           g_spike = false
+            
+           if V_m > Theta:
+               Theta = E_Na + 20 * mV
+               V_m = E_Na 
+               r = RefractoryCounts
+               g_spike = true
+               emit_spike()
+               print("here") 
+
+    function Hfun(cStel ms*mmol/dm**3, th ms*mmol/dm**3) real:
+        if cStel > th:
+            return 1.0
+        else:
+            return 0.0
+
+
+
+
+
